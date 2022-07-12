@@ -1,0 +1,330 @@
+---
+title: 'Myanmar Election 2015 vs 2020'
+author: "Nicholus Tint Zaw"
+fontsize: 12pt
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+header-includes: \usepackage{pdfpages}
+geometry: margin=0.5in
+fig_crop: no
+---
+
+
+
+```{r, echo=F, message = F, warning = F}
+library(knitr)
+library(diftrans)
+library(ggplot2)
+library(tidyverse)
+
+knitr::opts_chunk$set(fig.width=4, fig.height=3, message=F, warning=F, collapse=TRUE)
+options(width=70, digits=5, scipen=8)
+options(show.signif.stars = FALSE) # Show no stars for significance tests
+```
+
+
+## Background Information 
+
+Under the military dictatorship for over 60 years, the Military set up an exit -strategy from Burma/Myanmar Politic and implemented it through the Military Sponsered constitution by 2008. As part of its game plan, the Military organized the first election in 2010, and the military backup political party (USDP - Union Solidarity and Development Party) won with a landslide victory. The opponent party, National League for Democracy - NLD (Led by Aung San Su Kyi), boycotted that election and did not run for any parliamentarian candidacy. Because the democratic force believed that the constitution does not guarantee federal democracy and the military-sponsored election was not free and fair. According to the 2008 constitution, the military still controls the hard-power ministry (defense, home-affair, border affairs) and occupies 25% of each category of parliament. 
+
+However, NLD ran for election in 2015, which was organized by the Union Election Commission appointed by the Military and won the landslide victory. Therefore, NLD had a chance to rule the semi-civic government from 2016 to 2020. As the election is organized every 5 years, in November 2020, there was a general election, and this time, it was organized by the Union Election Commission appointed by the NLD government. And, NLD did the same result as in 2015 with a landslide victory. 
+
+However, on the 1st February 2021, before the first day of the new parliament (elected by Nov 2020 election), coup d'état in Burma/Myanmar began. The main rationale was that there was a lot of election fraud as extensive inclusion errors in the eligible voters' list in the 2020 election. 
+
+
+## Motivation 
+
+The various independent election observation organization issued the Burma 2020 election observations reports (including embassies), and all agreed that the election was not entirely free and fair. Still, those were not significant enough to change (or affect) the election results. Besides that, no articles investigated military claims on election fraud: significant inclusion error in eligible voters' list. Based on the Lab 2 exercise, I have an idea of how I can apply the difference-in-transport estimator to investigate what the military claimed as election fraud in the Burma 2020 election. 
+
+There is an opportunity to get the Burma election data for 2015 and 2020, including the individual candidacy level information on the number of valid votes and the number of eligible voters, and the voter turnout rate at each constituency level. 
+
+ Challenges points 
+ 
++ parallel trend assumption check 
++ the availability of control data 
+
+
+## Difference-in-Transports Cost Estimation 
+
+Using one election dataset as a sample demo exercise, I got the error in applying the "difrans" function in estimation optimal transport cost. 
+
+```{r}
+# data cleaning 
+load("df_all_pyithu_cleaned.rda")
+
+df_all_pyithu_cleaned <- df_all_pyithu_cleaned %>%
+  mutate(state_region = ifelse(state_region == "Kachin State", "Kachin",state_region), 
+         state_region = ifelse(state_region == "Kayah State", "Kayah",state_region),
+         state_region = ifelse(state_region == "Kayin State", "Kayin",state_region),
+         state_region = ifelse(state_region == "Chin State", "Chin",state_region),
+         state_region = ifelse(state_region == "Sagaing Region" | state_region == "Sagaing Division", "Sagaing",state_region),
+         state_region = ifelse(state_region == "Tanintharyi Region" | state_region == "Tanintharyi Division", "Tanintharyi",state_region),
+         state_region = ifelse(state_region == "Bago Region" | state_region == "Bago Division", "Bago",state_region),
+         state_region = ifelse(state_region == "Magway Region" | state_region == "Magway Division", "Magway",state_region),
+         state_region = ifelse(state_region == "Mandalay Region" | state_region == "Mandalay Division", "Mandalay",state_region),
+         state_region = ifelse(state_region == "Mon State", "Mon",state_region),
+         state_region = ifelse(state_region == "Rakhine State", "Rakhine",state_region),
+         state_region = ifelse(state_region == "Yangon Region" | state_region == "Yangon Division", "Yangon",state_region),
+         state_region = ifelse(state_region == "Shan State", "Shan",state_region),
+         state_region = ifelse(state_region == "Ayeyarwady Division" | state_region == "Ayeyarwady Region", "Ayeyarwady",state_region), 
+         state_region = ifelse(township_cleaned == "Lewe", "Shan",state_region),
+         state_region = ifelse(township_cleaned == "Pyinmana", "Nay Pyi Taw",state_region),
+         state_region = ifelse(township_cleaned == "Zay Yar Thi Ri", "Nay Pyi Taw",state_region),
+         state_region = ifelse(township_cleaned == "Poke Ba Thi Ri", "Nay Pyi Taw",state_region),
+         state_region = ifelse(township_cleaned == "Oke Ta Ra Thi Ri", "Nay Pyi Taw",state_region),
+         state_region = ifelse(township_cleaned == "Za Bu Thi Ri", "Nay Pyi Taw",state_region),
+         state_region = ifelse(township_cleaned == "Det Khi Na Thi Ri", "Nay Pyi Taw",state_region))
+
+
+unique(df_all_pyithu_cleaned$state_region)
+
+pyithu_2010 <- read.csv("2010electionresultspyithu.csv")
+
+pyithu_2010 <- pyithu_2010 %>% 
+  mutate(dataset = "pyithu_2010") %>%
+  rename(township_cleaned = name_ts, 
+         state_region = name_st, 
+         total_valid_votes = votes, 
+         political_party = party_name, 
+         candidiate_name = candidate_name)
+
+unique(pyithu_2010$state_region)
+
+
+df_all_pyithu_cleaned <- bind_rows(df_all_pyithu_cleaned, pyithu_2010)
+unique(df_all_pyithu_cleaned$dataset)
+
+################################################################################
+
+df_all_pyithu_cleaned <- df_all_pyithu_cleaned %>% 
+  select(state_region, township_cleaned, num_eligible_voters, dataset) %>%
+  group_by(state_region, township_cleaned, dataset) %>%
+  slice(1)
+
+
+df_2015 <- df_all_pyithu_cleaned %>% 
+  filter(dataset == "pyithu_2015") %>%
+  group_by(township_cleaned) %>%
+  summarise(num_eligible_voters = sum(num_eligible_voters))
+
+
+df_2020 <- df_all_pyithu_cleaned %>% 
+  filter(dataset == "pyithu_2020") %>%
+  group_by(township_cleaned) %>%
+  summarise(num_eligible_voters = sum(num_eligible_voters))
+
+```
+
+
+
+
+
+### Visualize the 2015 vs 2020 lower house data
+
+```{r, message = F, warning = F, fig.cap = "Eligable voter distribution 2015 vs 2020 for lower house", fig.width= 50, fig.height=6, fig.align='center', fig.show='hold', out.width='100%'}
+
+df_2015_dist <- df_2015 %>% uncount(num_eligible_voters)
+df_2020_dist <- df_2020 %>% uncount(num_eligible_voters)
+
+dist <- ggplot() +
+  geom_histogram(data = df_2015_dist, 
+                 stat="count", 
+                 aes(x = township_cleaned, 
+                     y = ..count../sum(..count..)), 
+                 fill = "orange", color = "orange", alpha = 0.35) +
+  geom_histogram(data = df_2020_dist, 
+                 stat="count", 
+                 aes(x = township_cleaned, 
+                     y = ..count../sum(..count..)), 
+                 fill = "steelblue", color = "steelblue", alpha = 0.35) +
+  labs(x = "State and Region", y = "Density - Number of Eligable Voter") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+dist
+
+```
+
+
+```{r}
+
+
+# df_all_pyithu_cleaned
+
+
+df_all_pyithu_cleaned_wide <- reshape(df_all_pyithu_cleaned, direction = "wide", 
+                                      idvar = "township_cleaned", timevar = "group")
+t.test(Pair(extra.1, extra.2) ~ 1, data = sleep2)
+
+
+df_all_pyithu_cleaned_wide <- pivot_wider(
+  df_all_pyithu_cleaned,
+  names_from = "dataset", 
+  values_from = "num_eligible_voters"
+  
+)
+
+
+```
+
+
+
+
+### Placebo Distribution  
+
+(a) placebo_1 
+
+```{r}
+set.seed(4487989)
+
+placebo_1 <- data.frame(township_cleaned = df_2015$township_cleaned, 
+                        count = rmultinom(n = 1, 
+                                          size = sum(df_2015$num_eligible_voters), 
+                                          prob = df_2015$num_eligible_voters))
+
+head(placebo_1)
+
+```
+
+(b) placebo_2 
+
+```{r}
+set.seed(384620)
+
+placebo_2 <- data.frame(township_cleaned = df_2015$township_cleaned, 
+                        count = rmultinom(n = 1, 
+                                          size = sum(df_2020$num_eligible_voters), 
+                                          prob = df_2015$num_eligible_voters)) 
+
+head(placebo_2)
+
+```
+
+
+
+(c)  Compare placebo_1 and placebo_2 
+
+```{r, message = F, warning = F, fig.cap = "Comparision between placebo 1 vs 2", fig.width= 6, fig.height=4, fig.align='center', fig.show='hold', out.width='100%'}
+
+placebo_1_dist <- placebo_1 %>% uncount(count) 
+placebo_2_dist <- placebo_2 %>% uncount(count)
+
+
+ggplot() +
+  geom_histogram(data = placebo_1_dist, 
+                 stat="count", 
+                 aes(x = township_cleaned, 
+                     y = ..count../sum(..count..)), 
+                 fill = "orange", color = "orange", alpha = 0.35) +
+  geom_histogram(data = placebo_2_dist, 
+                 stat="count", 
+                 aes(x = township_cleaned, 
+                     y = ..count../sum(..count..)), 
+                 fill = "steelblue", color = "steelblue", alpha = 0.35) +
+  labs(x = "State and Region", y = "Density - Number of Eligable Voter") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+```
+
+
+
+
+### Optimal transport cost calculation 
+
+```{r, error = TRUE}
+
+bandwidths <- c(0)
+
+placebo_at_0 <- diftrans(pre_main = placebo_1, 
+                         post_main = placebo_2, 
+                         var = township_cleaned, 
+                         bandwidth_seq = bandwidths)
+  
+  
+placebo_at_0 
+
+```
+
+(a) Compute the transport cost between the two placebo distributions with different bandwidths
+
+```{r, error = TRUE}
+
+bandwidths <- c(0, 500, 10000, 30000, 35000, 40000, 45000, 45150, 45198, 45200, 45500, 46000, 50000, 80000, 90000, 100000)
+
+placebo_at_bw <- diftrans(pre_main = placebo_1, 
+                         post_main = placebo_2, 
+                         var = township_cleaned, 
+                         bandwidth_seq = bandwidths) %>%
+  mutate(cat = "placebo")
+  
+  
+placebo_at_bw 
+
+```
+
+
+(b)  compute the transport cost between the observed distributions for 2015 and 2015 election eligible voters number
+
+
+```{r, error = TRUE}
+
+df_2015 <- df_2015 %>%
+  mutate(count = num_eligible_voters)
+
+df_2020 <- df_2020 %>%
+  mutate(count = num_eligible_voters)
+
+emprical_at_bw <- diftrans(pre_main = df_2015, 
+                         post_main = df_2020, 
+                         var = township_cleaned, 
+                         bandwidth_seq = bandwidths) %>%
+  mutate(cat = "emprical")
+  
+  
+emprical_at_bw 
+
+```
+
+(c) 
+
+```{r, error = TRUE, message = F, warning = F, fig.cap = "Comparision between Placebo costs vs Emprical costs", fig.width= 7, fig.height=5, fig.align='center', fig.show='hold', out.width='100%'}
+
+df_merged <- rbind(placebo_at_bw, emprical_at_bw)
+
+ggplot(df_merged, aes(x = bandwidth, y = main, color = cat)) +
+  geom_line() +
+  labs(x = "Bandwidths", 
+       y = "the fraction of \n optimal transport cost", 
+       color = "between two distributions of") + 
+  theme(legend.position = "bottom")
+
+```
+
+
+(d)  values of d, the placebo cost less than 0.05% 
+
+```{r, error = TRUE}
+
+placebo_at_bw %>%
+  arrange(-main) %>%
+  filter(main < 0.0005)
+
+```
+
+
+
+(e) The empirical transport cost at lowest value of d 
+
+```{r, error = TRUE}
+
+emprical_at_bw %>%
+  arrange(main) %>%
+  filter(bandwidth == 45200)
+
+```
+
+
+
